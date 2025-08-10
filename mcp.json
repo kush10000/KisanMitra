@@ -1,0 +1,20 @@
+{
+    "name": "farmer-advisory",
+    "version": "1.0.0",
+    "description": "Provides farmers with weather-based tips and emergency alerts based on crop and region.",
+    "type": "http",
+    "endpoints": [
+      {
+        "name": "getFarmerAdvice",
+        "method": "GET",
+        "path": "/get-farmer-advice",
+        "queryParameters": [
+          { "name": "crop", "required": true, "description": "Name of the crop" },
+          { "name": "region", "required": true, "description": "City or region name" },
+          { "name": "lang", "required": false, "description": "Language code (en or hi)" }
+        ],
+        "description": "Returns forecast, emergency alert, and crop-specific advice in the chosen language."
+      }
+    ]
+  }
+  
