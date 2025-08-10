@@ -2,10 +2,12 @@ import express from "express";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import { getWeather, getAlert } from "./utils.js";
+import cors from "cors";
 
 dotenv.config();
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+app.use(cors());
 
 app.get("/get-farmer-advice", async (req, res) => {
   const { crop, region, lang = "en" } = req.query;
