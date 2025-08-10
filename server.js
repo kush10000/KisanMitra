@@ -3,11 +3,20 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { getWeather, getAlert } from "./utils.js";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.use(cors());
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.get("/mcp", (req, res) => {
+  res.sendFile(path.join(__dirname, "mcp.json"));
+});
 
 app.get("/get-farmer-advice", async (req, res) => {
   const { crop, region, lang = "en" } = req.query;
