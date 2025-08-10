@@ -5,6 +5,7 @@
       {
         "name": "get-farmer-advice",
         "description": "Get daily farming advice based on crop and region, with optional language preference.",
+        "method": "GET",
         "parameters": {
           "type": "object",
           "properties": {
@@ -23,6 +24,16 @@
             }
           },
           "required": ["crop", "region"]
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "crop": { "type": "string" },
+            "region": { "type": "string" },
+            "forecast": { "type": "string" },
+            "daily_tip": { "type": "string" },
+            "emergency_alert": { "type": "string" }
+          }
         },
         "url": "https://kisanmitra-lfc2.onrender.com/get-farmer-advice"
       }
