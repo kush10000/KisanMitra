@@ -3,245 +3,339 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { getWeather, getAlert } from "./utils.js";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
 
 dotenv.config();
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Essential middleware
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: false
+}));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+app.use(express.json());
+app.use(express.text());
+
+// Add request logging for debugging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
 
 // Bearer token authentication middleware
 const authenticateBearer = (req, res, next) => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('❌ No valid Authorization header found');
     return res.status(401).json({ 
-      error: 'Unauthorized', 
-      message: 'Bearer token required' 
+      error: 'Authentication required',
+      message: 'Bearer token must be provided in Authorization header'
     });
   }
   
-  const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+  const token = authHeader.substring(7);
   const expectedToken = process.env.MCP_BEARER_TOKEN;
   
   if (!expectedToken) {
+    console.error('❌ MCP_BEARER_TOKEN environment variable not set');
     return res.status(500).json({ 
-      error: 'Server configuration error', 
-      message: 'MCP_BEARER_TOKEN not configured' 
+      error: 'Server misconfiguration',
+      message: 'Authentication not properly configured'
     });
   }
   
   if (token !== expectedToken) {
+    console.log(`❌ Invalid token: ${token.substring(0, 8)}...`);
     return res.status(401).json({ 
-      error: 'Unauthorized', 
-      message: 'Invalid bearer token' 
+      error: 'Invalid authentication',
+      message: 'Bearer token is incorrect'
     });
   }
   
+  console.log('✅ Authentication successful');
   next();
 };
 
-// Public route - MCP configuration (no auth required)
+// Root endpoint - helps with basic connectivity testing
+app.get("/", (req, res) => {
+  res.json({
+    name: "KisanMitra MCP Server",
+    version: "1.0.0",
+    status: "running",
+    endpoints: {
+      health: "/health",
+      mcp_config: "/mcp",
+      farmer_advice: "/get-farmer-advice"
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check - critical for MCP validation
+app.get("/health", (req, res) => {
+  const health = {
+    status: "healthy",
+    server: "KisanMitra",
+    version: "1.0.0",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: {
+      openai_configured: !!process.env.OPENAI_API_KEY,
+      weather_configured: !!process.env.OPENWEATHER_API_KEY,
+      auth_configured: !!process.env.MCP_BEARER_TOKEN
+    }
+  };
+  
+  console.log('✅ Health check requested');
+  res.status(200).json(health);
+});
+
+// MCP Configuration - MUST return valid JSON
 app.get("/mcp", (req, res) => {
+  console.log('📋 MCP configuration requested');
+  
+  // Get the base URL dynamically
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+  
   const mcpConfig = {
+    "schema_version": "1.0",
     "name": "KisanMitra",
-    "description": "Provides daily weather-based farming tips, forecasts, and emergency alerts for Indian farmers with Bearer token authentication.",
     "version": "1.0.0",
+    "description": "AI-powered farming assistant providing weather-based agricultural advice for Indian farmers",
+    "author": "KisanMitra Team",
+    "license": "MIT",
     "authentication": {
       "type": "bearer",
-      "description": "Requires Bearer token authentication. Set MCP_BEARER_TOKEN environment variable."
+      "description": "Bearer token authentication required for protected endpoints"
     },
-    "functions": [
+    "capabilities": {
+      "weather_integration": true,
+      "ai_advice": true,
+      "multilingual": true,
+      "emergency_alerts": true
+    },
+    "tools": [
       {
-        "name": "get-farmer-advice",
-        "description": "Get daily farming advice based on crop and region, with optional language preference. Requires Bearer token authentication.",
-        "method": "GET",
-        "authentication_required": true,
-        "parameters": {
+        "name": "get_farmer_advice",
+        "description": "Get personalized farming advice based on current weather conditions",
+        "input_schema": {
           "type": "object",
           "properties": {
             "crop": {
               "type": "string",
-              "description": "The name of the crop (e.g., wheat, rice, maize, cotton, sugarcane, tomato)",
-              "required": true,
-              "examples": ["wheat", "rice", "maize", "cotton", "sugarcane"]
+              "description": "The crop being grown (e.g., wheat, rice, cotton, maize)",
+              "examples": ["wheat", "rice", "cotton", "maize", "tomato", "sugarcane"]
             },
             "region": {
               "type": "string", 
-              "description": "Region name or city where the crop is grown (e.g., Delhi, Punjab, Lucknow, Mumbai, Chennai)",
-              "required": true,
-              "examples": ["Delhi", "Punjab", "Lucknow", "Mumbai", "Chennai"]
+              "description": "Indian city or region name (e.g., Delhi, Mumbai, Punjab)",
+              "examples": ["Delhi", "Mumbai", "Chennai", "Punjab", "Maharashtra"]
             },
-            "lang": {
+            "language": {
               "type": "string",
-              "description": "Language code for the advice. 'en' for English, 'hi' for Hindi. Default: 'en'",
-              "default": "en",
+              "description": "Response language preference",
               "enum": ["en", "hi"],
-              "required": false
+              "default": "en"
             }
           },
           "required": ["crop", "region"]
-        },
-        "headers": {
-          "Authorization": "Bearer {token}",
-          "Content-Type": "application/json"
-        },
-        "returns": {
-          "type": "object",
-          "properties": {
-            "success": { "type": "boolean" },
-            "data": {
-              "type": "object",
-              "properties": {
-                "crop": { "type": "string" },
-                "region": { "type": "string" },
-                "forecast": { "type": "string", "description": "Current weather conditions" },
-                "daily_tip": { "type": "string", "description": "AI-generated farming advice" },
-                "emergency_alert": { "type": "string", "description": "Weather-based alerts and warnings" },
-                "timestamp": { "type": "string", "description": "ISO timestamp of response" },
-                "language": { "type": "string", "description": "Response language" }
-              }
-            }
-          }
-        },
-        "url": `${req.protocol}://${req.get('host')}/get-farmer-advice`
+        }
       }
     ],
     "endpoints": {
-      "health": {
-        "url": `${req.protocol}://${req.get('host')}/health`,
-        "method": "GET",
-        "description": "Health check endpoint",
-        "authentication_required": false
-      },
-      "mcp_config": {
-        "url": `${req.protocol}://${req.get('host')}/mcp`,
-        "method": "GET",
-        "description": "MCP configuration endpoint", 
-        "authentication_required": false
-      }
-    }
+      "base": baseUrl,
+      "health": `${baseUrl}/health`,
+      "farmer_advice": `${baseUrl}/get-farmer-advice`
+    },
+    "supported_regions": [
+      "All Indian states and major cities",
+      "Examples: Delhi, Mumbai, Chennai, Kolkata, Bangalore, Hyderabad",
+      "Punjab, Haryana, Uttar Pradesh, Maharashtra, Tamil Nadu"
+    ],
+    "supported_crops": [
+      "wheat", "rice", "maize", "cotton", "sugarcane", 
+      "tomato", "potato", "onion", "soybean", "mustard"
+    ]
   };
   
-  res.json(mcpConfig);
+  // Set proper headers for MCP compatibility
+  res.set({
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache',
+    'X-MCP-Server': 'KisanMitra'
+  });
+  
+  res.status(200).json(mcpConfig);
 });
 
-// Health check endpoint (no auth required)
-app.get("/health", (req, res) => {
-  res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
-
-// Protected route - requires Bearer token authentication
+// Protected farming advice endpoint
 app.get("/get-farmer-advice", authenticateBearer, async (req, res) => {
   const { crop, region, lang = "en" } = req.query;
   
+  console.log(`🌾 Advice request: crop=${crop}, region=${region}, lang=${lang}`);
+  
+  // Validate required parameters
   if (!crop || !region) {
-    return res.status(400).json({ 
-      error: "Missing parameters", 
-      message: "Both crop and region parameters are required" 
+    return res.status(400).json({
+      success: false,
+      error: "Missing required parameters",
+      message: "Both 'crop' and 'region' parameters are required",
+      usage: "?crop=wheat&region=Punjab&lang=en"
     });
   }
 
   try {
-    // 1. Weather data
+    // Step 1: Get weather data
+    console.log(`🌤️ Fetching weather for ${region}`);
     const weather = await getWeather(region);
-
-    // 2. Emergency alerts
+    
+    // Step 2: Generate emergency alerts
     const emergency = getAlert(weather);
+    
+    // Step 3: Create AI prompt
+    const prompt = `You are an expert agricultural advisor for Indian farmers.
 
-    // 3. AI-generated advice (also translation if needed)
-    const prompt = `
-      You are a farming assistant for Indian farmers.
-      Weather: ${weather.description}, Temperature: ${weather.temp}°C, Wind Speed: ${weather.wind} km/h
-      Crop: ${crop}
-      Region: ${region}
-      Emergency alert: ${emergency}
-      
-      Provide a concise, practical farming tip for this situation. Consider:
-      - Current weather conditions
-      - Crop-specific needs
-      - Regional farming practices
-      - Seasonal considerations
-      
-      Language: ${lang === "hi" ? "Hindi (Devanagari script)" : "English"}
-      Keep the response under 150 words and actionable.
-    `;
+CURRENT CONDITIONS:
+- Location: ${region}, India
+- Crop: ${crop}
+- Weather: ${weather.description}
+- Temperature: ${weather.temp}°C
+- Wind: ${weather.wind} km/h
+- Emergency Status: ${emergency}
 
-    const aiResp = await openai.chat.completions.create({
+TASK: Provide specific, actionable farming advice for this situation.
+
+GUIDELINES:
+- Consider the current weather impact on ${crop}
+- Include immediate actions the farmer should take
+- Mention any preventive measures needed
+- Keep advice practical and location-specific
+- Language: ${lang === "hi" ? "Hindi (use Devanagari script)" : "English"}
+- Length: Maximum 100 words
+
+Focus on what the farmer should do TODAY based on these conditions.`;
+
+    console.log('🤖 Generating AI advice');
+    const aiResponse = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
-      max_tokens: 200
+      max_tokens: 150
     });
 
-    const advice = aiResp.choices[0].message.content;
-
-    res.json({
+    const advice = aiResponse.choices[0].message.content;
+    
+    const response = {
       success: true,
       data: {
-        crop,
-        region,
-        forecast: `${weather.description}, ${weather.temp}°C, Wind: ${weather.wind} km/h`,
-        daily_tip: advice,
+        crop: crop,
+        region: region,
+        weather_forecast: `${weather.description}, ${weather.temp}°C, Wind: ${weather.wind} km/h`,
+        farming_advice: advice,
         emergency_alert: emergency,
+        language: lang,
         timestamp: new Date().toISOString(),
-        language: lang
+        confidence: "high"
+      },
+      metadata: {
+        weather_source: "OpenWeatherMap",
+        ai_model: "GPT-4o-mini",
+        request_id: Math.random().toString(36).substring(7)
       }
-    });
+    };
 
-  } catch (err) {
-    console.error("Error in /get-farmer-advice:", err);
+    console.log('✅ Advice generated successfully');
+    res.json(response);
+
+  } catch (error) {
+    console.error('❌ Error generating advice:', error);
     
     // Handle specific error types
-    if (err.response?.status === 404) {
-      return res.status(404).json({ 
-        error: "Location not found", 
-        message: `Unable to find weather data for region: ${region}` 
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        success: false,
+        error: "Location not found",
+        message: `Weather data unavailable for ${region}. Try a major city name.`,
+        suggestions: ["Delhi", "Mumbai", "Chennai", "Bangalore", "Kolkata"]
       });
     }
     
-    if (err.response?.status === 401) {
-      return res.status(500).json({ 
-        error: "Weather API authentication failed", 
-        message: "Please check OPENWEATHER_API_KEY configuration" 
+    if (error.code === 'insufficient_quota') {
+      return res.status(503).json({
+        success: false,
+        error: "Service temporarily unavailable",
+        message: "AI service quota exceeded. Please try again later."
       });
     }
     
-    res.status(500).json({ 
-      error: "Internal server error", 
-      message: err.message || "Something went wrong while processing your request" 
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: "Unable to generate farming advice at this time",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
+// Test endpoint for debugging authentication
+app.get("/test-auth", authenticateBearer, (req, res) => {
+  res.json({
+    success: true,
+    message: "Authentication working correctly",
+    timestamp: new Date().toISOString(),
+    server: "KisanMitra MCP"
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({ 
-    error: "Internal server error", 
-    message: "An unexpected error occurred" 
+  console.error('❌ Unhandled error:', err);
+  res.status(500).json({
+    success: false,
+    error: "Internal server error",
+    message: "An unexpected error occurred"
   });
 });
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
-    error: "Not found", 
-    message: `Route ${req.method} ${req.path} not found` 
+  console.log(`❌ 404: ${req.method} ${req.path}`);
+  res.status(404).json({
+    success: false,
+    error: "Endpoint not found",
+    message: `${req.method} ${req.path} is not a valid endpoint`,
+    available_endpoints: ["/", "/health", "/mcp", "/get-farmer-advice", "/test-auth"]
   });
 });
 
+// Start server
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log(`KisanMitra MCP server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`MCP config: http://localhost:${PORT}/mcp`);
-  console.log(`Bearer token authentication enabled: ${process.env.MCP_BEARER_TOKEN ? 'Yes' : 'No'}`);
+  console.log('\n🌾 ============================================');
+  console.log('🌾          KisanMitra MCP Server           🌾');
+  console.log('🌾 ============================================');
+  console.log(`📡 Server Status: RUNNING`);
+  console.log(`🔗 Port: ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('');
+  console.log('📊 Configuration Status:');
+  console.log(`   🔑 Bearer Token: ${process.env.MCP_BEARER_TOKEN ? '✅ SET' : '❌ MISSING'}`);
+  console.log(`   🤖 OpenAI API: ${process.env.OPENAI_API_KEY ? '✅ SET' : '❌ MISSING'}`);
+  console.log(`   🌤️  Weather API: ${process.env.OPENWEATHER_API_KEY ? '✅ SET' : '❌ MISSING'}`);
+  console.log('');
+  console.log('🔗 Endpoints:');
+  console.log(`   Root: http://localhost:${PORT}/`);
+  console.log(`   Health: http://localhost:${PORT}/health`);
+  console.log(`   MCP Config: http://localhost:${PORT}/mcp`);
+  console.log(`   Test Auth: http://localhost:${PORT}/test-auth`);
+  console.log('');
+  console.log('🎯 Ready for MCP connections!');
+  console.log('🌾 ============================================\n');
 });
