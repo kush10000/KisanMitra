@@ -1,19 +1,30 @@
 {
-    "name": "farmer-advisory",
-    "version": "1.0.0",
-    "description": "Provides farmers with weather-based tips and emergency alerts based on crop and region.",
-    "type": "http",
-    "endpoints": [
+    "name": "KisanMitra",
+    "description": "Provides daily weather-based farming tips, forecasts, and emergency alerts for Indian farmers.",
+    "functions": [
       {
-        "name": "getFarmerAdvice",
-        "method": "GET",
-        "path": "/get-farmer-advice",
-        "queryParameters": [
-          { "name": "crop", "required": true, "description": "Name of the crop" },
-          { "name": "region", "required": true, "description": "City or region name" },
-          { "name": "lang", "required": false, "description": "Language code (en or hi)" }
-        ],
-        "description": "Returns forecast, emergency alert, and crop-specific advice in the chosen language."
+        "name": "get-farmer-advice",
+        "description": "Get daily farming advice based on crop and region, with optional language preference.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "crop": {
+              "type": "string",
+              "description": "The name of the crop. Example: wheat, rice, maize"
+            },
+            "region": {
+              "type": "string",
+              "description": "Region name or city where the crop is grown. Example: Delhi, Punjab, Lucknow"
+            },
+            "lang": {
+              "type": "string",
+              "description": "Language code for the advice. 'en' for English, 'hi' for Hindi. Default: 'en'",
+              "default": "en"
+            }
+          },
+          "required": ["crop", "region"]
+        },
+        "url": "https://kisanmitra-lfc2.onrender.com/get-farmer-advice"
       }
     ]
   }
