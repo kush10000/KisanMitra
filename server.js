@@ -50,7 +50,87 @@ const authenticateBearer = (req, res, next) => {
 
 // Public route - MCP configuration (no auth required)
 app.get("/mcp", (req, res) => {
-  res.sendFile(path.join(__dirname, "mcp.json"));
+  const mcpConfig = {
+    "name": "KisanMitra",
+    "description": "Provides daily weather-based farming tips, forecasts, and emergency alerts for Indian farmers with Bearer token authentication.",
+    "version": "1.0.0",
+    "authentication": {
+      "type": "bearer",
+      "description": "Requires Bearer token authentication. Set MCP_BEARER_TOKEN environment variable."
+    },
+    "functions": [
+      {
+        "name": "get-farmer-advice",
+        "description": "Get daily farming advice based on crop and region, with optional language preference. Requires Bearer token authentication.",
+        "method": "GET",
+        "authentication_required": true,
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "crop": {
+              "type": "string",
+              "description": "The name of the crop (e.g., wheat, rice, maize, cotton, sugarcane, tomato)",
+              "required": true,
+              "examples": ["wheat", "rice", "maize", "cotton", "sugarcane"]
+            },
+            "region": {
+              "type": "string", 
+              "description": "Region name or city where the crop is grown (e.g., Delhi, Punjab, Lucknow, Mumbai, Chennai)",
+              "required": true,
+              "examples": ["Delhi", "Punjab", "Lucknow", "Mumbai", "Chennai"]
+            },
+            "lang": {
+              "type": "string",
+              "description": "Language code for the advice. 'en' for English, 'hi' for Hindi. Default: 'en'",
+              "default": "en",
+              "enum": ["en", "hi"],
+              "required": false
+            }
+          },
+          "required": ["crop", "region"]
+        },
+        "headers": {
+          "Authorization": "Bearer {token}",
+          "Content-Type": "application/json"
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "boolean" },
+            "data": {
+              "type": "object",
+              "properties": {
+                "crop": { "type": "string" },
+                "region": { "type": "string" },
+                "forecast": { "type": "string", "description": "Current weather conditions" },
+                "daily_tip": { "type": "string", "description": "AI-generated farming advice" },
+                "emergency_alert": { "type": "string", "description": "Weather-based alerts and warnings" },
+                "timestamp": { "type": "string", "description": "ISO timestamp of response" },
+                "language": { "type": "string", "description": "Response language" }
+              }
+            }
+          }
+        },
+        "url": `${req.protocol}://${req.get('host')}/get-farmer-advice`
+      }
+    ],
+    "endpoints": {
+      "health": {
+        "url": `${req.protocol}://${req.get('host')}/health`,
+        "method": "GET",
+        "description": "Health check endpoint",
+        "authentication_required": false
+      },
+      "mcp_config": {
+        "url": `${req.protocol}://${req.get('host')}/mcp`,
+        "method": "GET",
+        "description": "MCP configuration endpoint", 
+        "authentication_required": false
+      }
+    }
+  };
+  
+  res.json(mcpConfig);
 });
 
 // Health check endpoint (no auth required)
